@@ -83,22 +83,25 @@ async def github_callback(request: Request, session: SessionDep):
     access_token = create_access_token(user.id)
     refresh_token_value = create_refresh_token(user.id, session)
 
+    settings = get_settings()
     redirect = RedirectResponse(
-        url=f"{get_settings().frontend_url.rstrip('/')}/auth/callback",
+        url=f"{settings.frontend_url.rstrip('/')}/auth/callback",
         status_code=302,
     )
     redirect.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=False,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
         max_age=ACCESS_TOKEN_MINUTES * 60,
     )
     redirect.set_cookie(
         key="refresh_token",
         value=refresh_token_value,
         httponly=True,
-        secure=False,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
         max_age=REFRESH_TOKEN_MINUTES * 60,
     )
     return redirect
@@ -117,18 +120,21 @@ async def refresh(
 ):
     tokens = refresh_all_tokens(session=session, refresh_token=refresh_token)
 
+    settings = get_settings()
     response.set_cookie(
         key="access_token",
         value=tokens["access_token"],
         httponly=True,
-        secure=False,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
         max_age=ACCESS_TOKEN_MINUTES * 60,
     )
     response.set_cookie(
         key="refresh_token",
         value=tokens["refresh_token"],
         httponly=True,
-        secure=False,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
         max_age=REFRESH_TOKEN_MINUTES * 60,
     )
     return TokenPair(access_token=tokens["access_token"], refresh_token=tokens["refresh_token"])
