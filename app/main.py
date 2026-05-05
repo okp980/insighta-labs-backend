@@ -11,6 +11,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import Settings
+from .csrf import CSRFMiddleware
 from .database import create_db_and_tables
 from .rate_limit import limiter
 from .routers import auth, profiles
@@ -38,6 +39,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["X-CSRF-Token"],
+)
+
+app.add_middleware(
+    CSRFMiddleware,
+    cookie_secure=get_settings().cookie_secure,
+    cookie_samesite=get_settings().cookie_samesite,
 )
 
 # we need this to save temporary code & state in session
