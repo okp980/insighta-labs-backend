@@ -62,26 +62,23 @@ async def search_profiles(
     session: SessionDep,
     current_user: Annotated[User, Depends(require_roles("admin", "analyst"))],
 ):
-    try:
-        profiles_result = filter_search_profiles(
-            session=session, search_params=search_params
-        )
-        total = profiles_result["count"]
-        total_pages = compute_total_pages(total, search_params.limit)
-        return ProfilesPublic(
-            page=search_params.page,
-            limit=search_params.limit,
-            total=total,
+    profiles_result = filter_search_profiles(
+        session=session, search_params=search_params
+    )
+    total = profiles_result["count"]
+    total_pages = compute_total_pages(total, search_params.limit)
+    return ProfilesPublic(
+        page=search_params.page,
+        limit=search_params.limit,
+        total=total,
+        total_pages=total_pages,
+        links=build_pagination_links(
+            path="/api/profiles/search",
+            params=search_params,
             total_pages=total_pages,
-            links=build_pagination_links(
-                path="/api/profiles/search",
-                params=search_params,
-                total_pages=total_pages,
-            ),
-            data=profiles_result["data"],
-        )
-    except Exception:
-        raise CustomHTTPException(status_code=502, message="Sever error")
+        ),
+        data=profiles_result["data"],
+    )
 
 
 @router.get("/export")
