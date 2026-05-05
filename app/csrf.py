@@ -27,6 +27,7 @@ UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 EXEMPT_PATH_PREFIXES = (
     "/auth/github/login",
     "/auth/github/callback",
+    "/auth/cli/",
 )
 
 
