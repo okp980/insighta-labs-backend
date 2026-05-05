@@ -3,7 +3,7 @@ from typing import Annotated
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Cookie, Depends, Request
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 
 from ..config import Settings
 from ..dependency import SessionDep
@@ -56,13 +56,10 @@ async def github_login(request: Request):
     return await oauth.github.authorize_redirect(request, str(redirect_uri))
 
 
-@router.get("/github/callback", response_model=TokenPair)
+@router.get("/github/callback")
 @limiter.limit("10/minute")
-async def github_callback(request: Request, response: Response, session: SessionDep):
-    token = await oauth.github.authorize_access_token(
-        request,
-    )
-    print(token)
+async def github_callback(request: Request, session: SessionDep):
+    token = await oauth.github.authorize_access_token(request)
     resp = await oauth.github.get("user", token=token)
     github_user = resp.json()
 
@@ -84,23 +81,27 @@ async def github_callback(request: Request, response: Response, session: Session
             ),
         )
     access_token = create_access_token(user.id)
-    refresh_token = create_refresh_token(user.id, session)
+    refresh_token_value = create_refresh_token(user.id, session)
 
-    response.set_cookie(
+    redirect = RedirectResponse(
+        url=f"{get_settings().frontend_url.rstrip('/')}/auth/callback",
+        status_code=302,
+    )
+    redirect.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
         secure=False,
         max_age=ACCESS_TOKEN_MINUTES * 60,
     )
-    response.set_cookie(
+    redirect.set_cookie(
         key="refresh_token",
-        value=refresh_token,
+        value=refresh_token_value,
         httponly=True,
         secure=False,
         max_age=REFRESH_TOKEN_MINUTES * 60,
     )
-    return TokenPair(access_token=access_token, refresh_token=refresh_token)
+    return redirect
 
 
 @router.post(
