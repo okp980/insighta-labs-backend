@@ -1,9 +1,11 @@
 from functools import lru_cache
 from typing import Annotated
 
+import httpx
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Cookie, Depends, Request
 from fastapi.responses import RedirectResponse, Response
+from pydantic import BaseModel
 
 from ..config import Settings
 from ..dependency import SessionDep
@@ -16,6 +18,7 @@ from ..security import (
     create_refresh_token,
 )
 from ..util import (
+    CustomHTTPException,
     create_user,
     get_current_user,
     get_user_by_github_id,
@@ -167,4 +170,153 @@ async def me(current_user: Annotated[User, Depends(get_current_user)]):
             role=current_user.role,
             is_active=current_user.is_active,
         )
+    )
+
+
+# ---------------------------------------------------------------------------
+# CLI OAuth (PKCE) endpoints
+#
+# Designed for native/CLI clients per RFC 8252. The CLI generates its own
+# state + PKCE pair, runs a temporary loopback HTTP server on the redirect
+# port, drives the user through GitHub in their browser, then exchanges the
+# returned `code` (plus the original `code_verifier`) here for our own
+# JWT pair. Tokens are returned in the JSON body so the CLI can persist
+# them locally; cookies are not used for the CLI.
+# ---------------------------------------------------------------------------
+
+
+class CliStartResponse(BaseModel):
+    status: str = "success"
+    client_id: str
+    redirect_uri: str
+    scope: str = "user:email"
+
+
+class CliExchangeBody(BaseModel):
+    code: str
+    code_verifier: str
+    state: str | None = None
+
+
+class CliExchangeResponse(BaseModel):
+    status: str = "success"
+    access_token: str
+    refresh_token: str
+    user: UserPublic
+
+
+@router.get("/cli/start", response_model=CliStartResponse)
+@limiter.limit("10/minute")
+async def cli_start(request: Request):
+    settings = get_settings()
+    if not settings.github_cli_client_id:
+        raise CustomHTTPException(
+            status_code=500,
+            message=(
+                "CLI OAuth is not configured on the server "
+                "(GITHUB_CLI_CLIENT_ID is unset)."
+            ),
+        )
+    return CliStartResponse(
+        client_id=settings.github_cli_client_id,
+        redirect_uri=settings.github_cli_redirect_uri,
+    )
+
+
+@router.post("/cli/exchange", response_model=CliExchangeResponse)
+@limiter.limit("10/minute")
+async def cli_exchange(request: Request, session: SessionDep, body: CliExchangeBody):
+    settings = get_settings()
+    if not settings.github_cli_client_id or not settings.github_cli_client_secret:
+        raise CustomHTTPException(
+            status_code=500,
+            message=(
+                "CLI OAuth is not configured on the server "
+                "(GITHUB_CLI_CLIENT_ID/SECRET are unset)."
+            ),
+        )
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        token_resp = await client.post(
+            "https://github.com/login/oauth/access_token",
+            headers={"Accept": "application/json"},
+            data={
+                "client_id": settings.github_cli_client_id,
+                "client_secret": settings.github_cli_client_secret,
+                "code": body.code,
+                "code_verifier": body.code_verifier,
+                "redirect_uri": settings.github_cli_redirect_uri,
+            },
+        )
+        try:
+            token_payload = token_resp.json()
+        except ValueError:
+            raise CustomHTTPException(
+                status_code=502, message="Invalid response from GitHub token endpoint"
+            )
+
+        gh_access_token = token_payload.get("access_token")
+        if not gh_access_token:
+            raise CustomHTTPException(
+                status_code=401,
+                message=token_payload.get(
+                    "error_description",
+                    token_payload.get("error", "GitHub token exchange failed"),
+                ),
+            )
+
+        user_resp = await client.get(
+            "https://api.github.com/user",
+            headers={
+                "Authorization": f"Bearer {gh_access_token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        if user_resp.status_code != 200:
+            raise CustomHTTPException(
+                status_code=502, message="Failed to fetch user from GitHub"
+            )
+        github_user = user_resp.json()
+
+        emails_resp = await client.get(
+            "https://api.github.com/user/emails",
+            headers={
+                "Authorization": f"Bearer {gh_access_token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        emails = emails_resp.json() if emails_resp.status_code == 200 else []
+
+    primary_email = next(
+        (e["email"] for e in emails if e.get("primary") and e.get("verified")),
+        None,
+    )
+
+    user = get_user_by_github_id(session=session, github_id=github_user.get("id"))
+    if not user:
+        user = create_user(
+            session=session,
+            user=User(
+                github_id=github_user.get("id"),
+                username=github_user.get("login"),
+                email=primary_email or github_user.get("email"),
+                avatar_url=github_user.get("avatar_url"),
+            ),
+        )
+
+    access_token = create_access_token(user.id)
+    refresh_token_value = create_refresh_token(user.id, session)
+
+    return CliExchangeResponse(
+        access_token=access_token,
+        refresh_token=refresh_token_value,
+        user=UserPublic(
+            id=user.id,
+            github_id=user.github_id,
+            username=user.username,
+            email=user.email,
+            avatar_url=user.avatar_url,
+            role=user.role,
+            is_active=user.is_active,
+        ),
     )
