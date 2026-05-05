@@ -212,10 +212,7 @@ async def cli_start(request: Request):
     if not settings.github_cli_client_id:
         raise CustomHTTPException(
             status_code=500,
-            message=(
-                "CLI OAuth is not configured on the server "
-                "(GITHUB_CLI_CLIENT_ID is unset)."
-            ),
+            message=("CLI OAuth is not configured on the server (GITHUB_CLI_CLIENT_ID is unset)."),
         )
     return CliStartResponse(
         client_id=settings.github_cli_client_id,
@@ -231,8 +228,7 @@ async def cli_exchange(request: Request, session: SessionDep, body: CliExchangeB
         raise CustomHTTPException(
             status_code=500,
             message=(
-                "CLI OAuth is not configured on the server "
-                "(GITHUB_CLI_CLIENT_ID/SECRET are unset)."
+                "CLI OAuth is not configured on the server (GITHUB_CLI_CLIENT_ID/SECRET are unset)."
             ),
         )
 
@@ -273,9 +269,7 @@ async def cli_exchange(request: Request, session: SessionDep, body: CliExchangeB
             },
         )
         if user_resp.status_code != 200:
-            raise CustomHTTPException(
-                status_code=502, message="Failed to fetch user from GitHub"
-            )
+            raise CustomHTTPException(status_code=502, message="Failed to fetch user from GitHub")
         github_user = user_resp.json()
 
         emails_resp = await client.get(

@@ -71,8 +71,10 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             and (path.startswith("/api/") or path.startswith("/auth/"))
         ):
             header_token = request.headers.get(CSRF_HEADER_NAME)
-            if not cookie_token or not header_token or not secrets.compare_digest(
-                cookie_token, header_token
+            if (
+                not cookie_token
+                or not header_token
+                or not secrets.compare_digest(cookie_token, header_token)
             ):
                 return JSONResponse(
                     status_code=403,
