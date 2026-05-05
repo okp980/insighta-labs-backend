@@ -1,0 +1,262 @@
+[
+    {
+        "country_id": "AO",
+        "country_name": "Angola"
+    },
+    {
+        "country_id": "AU",
+        "country_name": "Australia"
+    },
+    {
+        "country_id": "BF",
+        "country_name": "Burkina Faso"
+    },
+    {
+        "country_id": "BI",
+        "country_name": "Burundi"
+    },
+    {
+        "country_id": "BJ",
+        "country_name": "Benin"
+    },
+    {
+        "country_id": "BR",
+        "country_name": "Brazil"
+    },
+    {
+        "country_id": "BW",
+        "country_name": "Botswana"
+    },
+    {
+        "country_id": "CA",
+        "country_name": "Canada"
+    },
+    {
+        "country_id": "CD",
+        "country_name": "DR Congo"
+    },
+    {
+        "country_id": "CF",
+        "country_name": "Central African Republic"
+    },
+    {
+        "country_id": "CG",
+        "country_name": "Republic of the Congo"
+    },
+    {
+        "country_id": "CI",
+        "country_name": "C\u00f4te d'Ivoire"
+    },
+    {
+        "country_id": "CM",
+        "country_name": "Cameroon"
+    },
+    {
+        "country_id": "CN",
+        "country_name": "China"
+    },
+    {
+        "country_id": "CV",
+        "country_name": "Cape Verde"
+    },
+    {
+        "country_id": "DE",
+        "country_name": "Germany"
+    },
+    {
+        "country_id": "DJ",
+        "country_name": "Djibouti"
+    },
+    {
+        "country_id": "DZ",
+        "country_name": "Algeria"
+    },
+    {
+        "country_id": "EG",
+        "country_name": "Egypt"
+    },
+    {
+        "country_id": "EH",
+        "country_name": "Western Sahara"
+    },
+    {
+        "country_id": "ER",
+        "country_name": "Eritrea"
+    },
+    {
+        "country_id": "ET",
+        "country_name": "Ethiopia"
+    },
+    {
+        "country_id": "FR",
+        "country_name": "France"
+    },
+    {
+        "country_id": "GA",
+        "country_name": "Gabon"
+    },
+    {
+        "country_id": "GB",
+        "country_name": "United Kingdom"
+    },
+    {
+        "country_id": "GH",
+        "country_name": "Ghana"
+    },
+    {
+        "country_id": "GM",
+        "country_name": "Gambia"
+    },
+    {
+        "country_id": "GN",
+        "country_name": "Guinea"
+    },
+    {
+        "country_id": "GQ",
+        "country_name": "Equatorial Guinea"
+    },
+    {
+        "country_id": "GW",
+        "country_name": "Guinea-Bissau"
+    },
+    {
+        "country_id": "IN",
+        "country_name": "India"
+    },
+    {
+        "country_id": "JP",
+        "country_name": "Japan"
+    },
+    {
+        "country_id": "KE",
+        "country_name": "Kenya"
+    },
+    {
+        "country_id": "KM",
+        "country_name": "Comoros"
+    },
+    {
+        "country_id": "LR",
+        "country_name": "Liberia"
+    },
+    {
+        "country_id": "LS",
+        "country_name": "Lesotho"
+    },
+    {
+        "country_id": "LY",
+        "country_name": "Libya"
+    },
+    {
+        "country_id": "MA",
+        "country_name": "Morocco"
+    },
+    {
+        "country_id": "MG",
+        "country_name": "Madagascar"
+    },
+    {
+        "country_id": "ML",
+        "country_name": "Mali"
+    },
+    {
+        "country_id": "MR",
+        "country_name": "Mauritania"
+    },
+    {
+        "country_id": "MU",
+        "country_name": "Mauritius"
+    },
+    {
+        "country_id": "MW",
+        "country_name": "Malawi"
+    },
+    {
+        "country_id": "MZ",
+        "country_name": "Mozambique"
+    },
+    {
+        "country_id": "NA",
+        "country_name": "Namibia"
+    },
+    {
+        "country_id": "NE",
+        "country_name": "Niger"
+    },
+    {
+        "country_id": "NG",
+        "country_name": "Nigeria"
+    },
+    {
+        "country_id": "RW",
+        "country_name": "Rwanda"
+    },
+    {
+        "country_id": "SC",
+        "country_name": "Seychelles"
+    },
+    {
+        "country_id": "SD",
+        "country_name": "Sudan"
+    },
+    {
+        "country_id": "SL",
+        "country_name": "Sierra Leone"
+    },
+    {
+        "country_id": "SN",
+        "country_name": "Senegal"
+    },
+    {
+        "country_id": "SO",
+        "country_name": "Somalia"
+    },
+    {
+        "country_id": "SS",
+        "country_name": "South Sudan"
+    },
+    {
+        "country_id": "ST",
+        "country_name": "S\u00e3o Tom\u00e9 and Pr\u00edncipe"
+    },
+    {
+        "country_id": "SZ",
+        "country_name": "Eswatini"
+    },
+    {
+        "country_id": "TD",
+        "country_name": "Chad"
+    },
+    {
+        "country_id": "TG",
+        "country_name": "Togo"
+    },
+    {
+        "country_id": "TN",
+        "country_name": "Tunisia"
+    },
+    {
+        "country_id": "TZ",
+        "country_name": "Tanzania"
+    },
+    {
+        "country_id": "UG",
+        "country_name": "Uganda"
+    },
+    {
+        "country_id": "US",
+        "country_name": "United States"
+    },
+    {
+        "country_id": "ZA",
+        "country_name": "South Africa"
+    },
+    {
+        "country_id": "ZM",
+        "country_name": "Zambia"
+    },
+    {
+        "country_id": "ZW",
+        "country_name": "Zimbabwe"
+    }
+]

@@ -2,7 +2,6 @@ from sqlmodel import SQLModel, Field
 import uuid7
 from datetime import datetime, timezone
 from enum import Enum
-from sqlalchemy import String
 
 
 class Gender(str, Enum):
@@ -44,3 +43,11 @@ class ProfilesPublic(SQLModel):
     limit: int
     total: int
     data: list[Profile]
+
+
+class ProfilePublicMessage(ProfilePublic):
+    message: str | None = "Profile already exists"
+
+
+class ProfileCreate(SQLModel):
+    name: str = Field()

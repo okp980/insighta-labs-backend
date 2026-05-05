@@ -1,13 +1,21 @@
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, status
+from fastapi.responses import JSONResponse
 from ..dependency import SessionDep, verify_api_version
 import uuid
-from ..util import CustomHTTPException, filter_profiles, filter_search_profiles
+from ..util import (
+    CustomHTTPException,
+    filter_profiles,
+    filter_search_profiles,
+    generate_profile,
+)
 from ..model.profiles import (
     ProfilePublic,
     ProfilesPublic,
     Profile,
+    ProfileCreate,
+    ProfilePublicMessage,
 )
-
+from sqlmodel import select
 from typing import Annotated
 from ..util import FilterParams, SearchParams
 from ..util import require_roles
@@ -65,3 +73,47 @@ async def get_profile(
     if not profile:
         raise CustomHTTPException(status_code=404, message="Profile not found")
     return ProfilePublic(data=profile)
+
+
+@router.post("/", response_model=ProfilePublic)
+async def create_profile(
+    profile: ProfileCreate,
+    session: SessionDep,
+    # current_user: Annotated[
+    #     User,
+    #     Depends(
+    #         require_roles(
+    #             "admin",
+    #         )
+    #     ),
+    # ],
+):
+    # db_profile = ProfileCreate.model_validate(profile)
+    existing_profile = session.exec(
+        select(Profile).where(Profile.name == profile.name)
+    ).first()
+    if existing_profile:
+        print("Profile already exists")
+        return ProfilePublicMessage(data=existing_profile)
+    profile_data = generate_profile(profile.name)
+    db_profile = Profile.model_validate(profile_data)
+    session.add(db_profile)
+    session.commit()
+    session.refresh(db_profile)
+    return ProfilePublic(data=db_profile)
+
+
+@router.delete(
+    "/{profile_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None
+)
+async def delete_profile(
+    profile_id: uuid.UUID,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(require_roles("admin"))],
+):
+    profile = session.get(Profile, profile_id)
+    if not profile:
+        raise CustomHTTPException(status_code=404, message="Profile not found")
+    session.delete(profile)
+    session.commit()
+    return JSONResponse(status_code=204, content={})
