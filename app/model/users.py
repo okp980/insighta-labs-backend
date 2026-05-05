@@ -46,3 +46,18 @@ class User(UserBase, table=True):
     is_active: bool = Field(default=True)
     last_login_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class UserPublic(SQLModel):
+    id: uuid7.UUID
+    github_id: int
+    username: str
+    email: str
+    avatar_url: str
+    role: Role
+    is_active: bool
+
+
+class UserPublicResponse(SQLModel):
+    status: str = "success"
+    data: UserPublic

@@ -7,7 +7,7 @@ from fastapi.responses import RedirectResponse, Response
 
 from ..config import Settings
 from ..dependency import SessionDep
-from ..model.users import TokenPair, User
+from ..model.users import TokenPair, User, UserPublic, UserPublicResponse
 from ..rate_limit import limiter
 from ..security import (
     ACCESS_TOKEN_MINUTES,
@@ -147,3 +147,18 @@ async def logout(
     response.delete_cookie(key="access_token")
     response.delete_cookie(key="refresh_token")
     return {"message": "Logged out successfully"}
+
+
+@router.get("/me", response_model=UserPublicResponse)
+async def me(current_user: Annotated[User, Depends(get_current_user)]):
+    return UserPublicResponse(
+        data=UserPublic(
+            id=current_user.id,
+            github_id=current_user.github_id,
+            username=current_user.username,
+            email=current_user.email,
+            avatar_url=current_user.avatar_url,
+            role=current_user.role,
+            is_active=current_user.is_active,
+        )
+    )
