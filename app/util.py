@@ -2,12 +2,14 @@ import csv
 import io
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import timezone
 from typing import Annotated, Callable, Iterator, Literal
 from urllib.parse import urlencode
 
 import httpx
 import jwt
+from cachetools import TTLCache
 from fastapi import Cookie, Depends
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 from pydantic import BaseModel, Field
@@ -50,6 +52,98 @@ class ExportParams(FilterParams):
 
 
 SUPPORTED_EXPORT_FORMATS = {"csv"}
+
+
+def _new_profiles_cache() -> TTLCache:
+    from .config import Settings
+
+    s = Settings()
+    return TTLCache(maxsize=s.profiles_cache_max_entries, ttl=s.profiles_cache_ttl_seconds)
+
+
+_PROFILES_CACHE = _new_profiles_cache()
+
+
+def invalidate_profiles_cache() -> None:
+    _PROFILES_CACHE.clear()
+
+
+@dataclass(frozen=True)
+class ParsedSearchFilters:
+    genders: tuple[str, ...]
+    min_age: int | None
+    max_age: int | None
+    exact_age: int | None
+    age_group: str | None
+    country_ilike: str | None
+
+
+def _canonical_list_dict(fp: FilterParams) -> dict:
+    min_age, max_age = fp.min_age, fp.max_age
+    if min_age is not None and max_age is not None and min_age > max_age:
+        min_age, max_age = max_age, min_age
+    d: dict = {
+        "endpoint": "list",
+        "limit": fp.limit,
+        "order": fp.order,
+        "page": fp.page,
+        "sort_by": fp.sort_by,
+    }
+    if fp.age_group is not None:
+        d["age_group"] = fp.age_group.lower()
+    if fp.country_id is not None:
+        d["country_id"] = fp.country_id.upper()
+    if fp.gender is not None:
+        d["gender"] = fp.gender.lower()
+    if min_age is not None:
+        d["min_age"] = min_age
+    if max_age is not None:
+        d["max_age"] = max_age
+    if fp.min_country_probability is not None:
+        d["min_country_probability"] = fp.min_country_probability
+    if fp.min_gender_probability is not None:
+        d["min_gender_probability"] = fp.min_gender_probability
+    return dict(sorted(d.items()))
+
+
+def _canonical_search_dict(parsed: ParsedSearchFilters, page: int, limit: int) -> dict:
+    d: dict = {"endpoint": "search", "limit": limit, "page": page}
+    if parsed.age_group is not None:
+        d["age_group"] = parsed.age_group
+    if parsed.country_ilike is not None:
+        d["country"] = parsed.country_ilike.casefold()
+    if parsed.exact_age is not None:
+        d["exact_age"] = parsed.exact_age
+    if parsed.genders:
+        d["genders"] = list(parsed.genders)
+    if parsed.max_age is not None:
+        d["max_age"] = parsed.max_age
+    if parsed.min_age is not None:
+        d["min_age"] = parsed.min_age
+    return dict(sorted(d.items()))
+
+
+def _profiles_result_to_cache(result: dict) -> dict:
+    return {"count": result["count"], "data": [p.model_dump(mode="json") for p in result["data"]]}
+
+
+def _profiles_result_from_cache(entry: dict) -> dict:
+    return {
+        "count": entry["count"],
+        "data": [Profile.model_validate(x) for x in entry["data"]],
+    }
+
+
+def _list_cache_key(fp: FilterParams) -> str:
+    return json.dumps(_canonical_list_dict(fp), sort_keys=True, separators=(",", ":"))
+
+
+def _search_cache_key(parsed: ParsedSearchFilters, page: int, limit: int) -> str:
+    return json.dumps(
+        _canonical_search_dict(parsed, page, limit),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 class CustomHTTPException(Exception):
@@ -190,17 +284,110 @@ def _build_profile_statement(filter_params: FilterParams):
     return statement
 
 
+def parse_search_query(q: str) -> ParsedSearchFilters:
+    male = [
+        "male",
+        "males",
+        "man",
+        "men",
+        "guy",
+        "guys",
+        "boy",
+        "boys",
+        "gentleman",
+        "gentlemen",
+    ]
+    female = [
+        "female",
+        "females",
+        "women",
+        "woman",
+        "lady",
+        "ladies",
+        "girl",
+        "girlsgentlewomen",
+    ]
+    teenager = ["teen", "teenager", "teenagers", "teenage"]
+    adult = ["adult", "adults", "adulthood"]
+    old = ["old", "elder", "elderly", "senior", "seniors"]
+
+    gender: list[str] = []
+    age: int | None = None
+    min_age: int | None = None
+    max_age: int | None = None
+    age_group: str | None = None
+    country_name: str | None = None
+    word_list = q.strip().lower().split()
+    for index, word in enumerate(word_list):
+        if word in male:
+            gender.append("male")
+        if word in female:
+            gender.append("female")
+        if word == "young":
+            min_age = 16
+            max_age = 24
+        if word.isdigit():
+            age = int(word)
+        if word == "above":
+            min_age = int(word_list[index + 1])
+        if word == "below":
+            max_age = int(word_list[index + 1])
+        if word in teenager:
+            age_group = "teenager"
+        if word in adult:
+            age_group = "adult"
+        if word in old:
+            age_group = "senior"
+        if word == "from" or word == "in":
+            country_name = word_list[index + 1]
+
+    genders = sorted(set(gender))
+    if min_age is not None and max_age is not None and min_age > max_age:
+        min_age, max_age = max_age, min_age
+
+    return ParsedSearchFilters(
+        genders=tuple(genders),
+        min_age=min_age,
+        max_age=max_age,
+        exact_age=age,
+        age_group=age_group,
+        country_ilike=country_name,
+    )
+
+
+def _build_search_statement(parsed: ParsedSearchFilters):
+    statement = select(Profile)
+    if len(parsed.genders) == 1:
+        statement = statement.where(col(Profile.gender) == parsed.genders[0])
+    if len(parsed.genders) > 1:
+        statement = statement.where(col(Profile.gender).in_(parsed.genders))
+    if parsed.min_age is not None:
+        statement = statement.where(col(Profile.age) >= parsed.min_age)
+    if parsed.max_age is not None:
+        statement = statement.where(col(Profile.age) <= parsed.max_age)
+    if parsed.exact_age is not None and parsed.min_age is None and parsed.max_age is None:
+        statement = statement.where(col(Profile.age) == parsed.exact_age)
+    if parsed.age_group is not None:
+        statement = statement.where(col(Profile.age_group) == parsed.age_group)
+    if parsed.country_ilike is not None:
+        statement = statement.where(col(Profile.country_name).ilike(parsed.country_ilike))
+    return statement
+
+
 def filter_profiles(*, session: Session, filter_params: FilterParams) -> dict:
-    statement = _build_profile_statement(filter_params)
-    statement = statement.offset((filter_params.page - 1) * filter_params.limit).limit(
+    cache_key = "list:" + _list_cache_key(filter_params)
+    cached = _PROFILES_CACHE.get(cache_key)
+    if cached is not None:
+        return _profiles_result_from_cache(cached)
+
+    base = _build_profile_statement(filter_params)
+    total_count = session.exec(select(func.count()).select_from(base.subquery())).one()
+    page_stmt = base.offset((filter_params.page - 1) * filter_params.limit).limit(
         filter_params.limit
     )
-    total_count = session.exec(select(func.count()).select_from(Profile)).one()
-    result = {
-        "count": total_count,
-        "data": session.exec(statement).all(),
-    }
-
+    data = session.exec(page_stmt).all()
+    result = {"count": total_count, "data": data}
+    _PROFILES_CACHE[cache_key] = _profiles_result_to_cache(result)
     return result
 
 
@@ -254,96 +441,34 @@ def stream_profiles_csv(*, session: Session, filter_params: FilterParams) -> Ite
 
 
 def filter_search_profiles(*, session: Session, search_params: SearchParams) -> dict:
-    male = [
-        "male",
-        "males",
-        "man",
-        "men",
-        "guy",
-        "guys",
-        "boy",
-        "boys",
-        "gentleman",
-        "gentlemen",
-    ]
-    female = [
-        "female",
-        "females",
-        "women",
-        "woman",
-        "lady",
-        "ladies",
-        "girl",
-        "girlsgentlewomen",
-    ]
-    teenager = ["teen", "teenager", "teenagers", "teenage"]
-    adult = ["adult", "adults", "adulthood"]
-    old = ["old", "elder", "elderly", "senior", "seniors"]
-
-    gender: list[str] = []
-    age: int | None = None
-    min_age: int | None = None
-    max_age: int | None = None
-    age_group: str | None = None
-    country_name: str | None = None
     word_list = search_params.q.strip().lower().split()
-    for index, word in enumerate(word_list):
-        if word in male:
-            gender.append("male")
-        if word in female:
-            gender.append("female")
-        if word == "young":
-            min_age = 16
-            max_age = 24
-        if word.isdigit():
-            age = int(word)
-        if word == "above":
-            min_age = int(word_list[index + 1])
-        if word == "below":
-            max_age = int(word_list[index + 1])
-        if word in teenager:
-            age_group = "teenager"
-        if word in adult:
-            age_group = "adult"
-        if word in old:
-            age_group = "senior"
-        if word == "from" or word == "in":
-            country_name = word_list[index + 1]
+    parsed = parse_search_query(search_params.q)
 
-    statement = select(Profile)
-    if len(gender) == 1:
-        statement = statement.where(col(Profile.gender) == gender[0])
-    if len(gender) > 1:
-        statement = statement.where(col(Profile.gender).in_(gender))
-
-    if min_age is not None:
-        statement = statement.where(col(Profile.age) >= min_age)
-    if max_age is not None:
-        statement = statement.where(col(Profile.age) <= max_age)
-    if age is not None and min_age is None and max_age is None:
-        statement = statement.where(col(Profile.age) == age)
-    if age_group is not None:
-        statement = statement.where(col(Profile.age_group) == age_group)
-    if country_name is not None:
-        statement = statement.where(col(Profile.country_name).ilike(country_name))
-
-    total_count = session.exec(select(func.count()).select_from(statement.subquery())).one()
-
-    statement = statement.offset((search_params.page - 1) * search_params.limit).limit(
-        search_params.limit
-    )
     is_not_interpreted = (
-        len(gender) == 0 and age is None and age_group is None and country_name is None
+        len(parsed.genders) == 0
+        and parsed.exact_age is None
+        and parsed.age_group is None
+        and parsed.country_ilike is None
     )
 
     if is_not_interpreted and len(word_list) > 0:
         raise CustomHTTPException(status_code=400, message="Unable to interpret query")
-    if len(session.exec(statement).all()) == 0:
+
+    cache_key = "search:" + _search_cache_key(parsed, search_params.page, search_params.limit)
+    cached = _PROFILES_CACHE.get(cache_key)
+    if cached is not None:
+        return _profiles_result_from_cache(cached)
+
+    base = _build_search_statement(parsed)
+    total_count = session.exec(select(func.count()).select_from(base.subquery())).one()
+    page_stmt = base.offset((search_params.page - 1) * search_params.limit).limit(
+        search_params.limit
+    )
+    rows = session.exec(page_stmt).all()
+    if len(rows) == 0:
         raise CustomHTTPException(status_code=404, message="No profiles found")
-    result = {
-        "count": total_count,
-        "data": session.exec(statement).all(),
-    }
+    result = {"count": total_count, "data": rows}
+    _PROFILES_CACHE[cache_key] = _profiles_result_to_cache(result)
     return result
 
 
