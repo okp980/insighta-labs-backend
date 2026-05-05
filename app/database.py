@@ -1,9 +1,14 @@
 from sqlmodel import SQLModel, create_engine
 
-sqlite_file_name = "sqlite.db"
-sqlite_url = f"sqlite:///{sqlite_file_name}"
-connect_args = {"check_same_thread": False}
-engine = create_engine(sqlite_url, connect_args=connect_args)
+from .config import Settings
+
+_settings = Settings()
+engine = create_engine(
+    _settings.database_url,
+    pool_pre_ping=True,
+    pool_size=_settings.db_pool_size,
+    max_overflow=_settings.db_max_overflow,
+)
 
 
 def create_db_and_tables():

@@ -18,6 +18,18 @@ class Settings(BaseSettings):
     cookie_secure: bool = Field(default=False)
     cookie_samesite: str = Field(default="lax")
 
+    database_url: str = Field(
+        default="postgresql+psycopg://postgres:postgres@127.0.0.1:5432/insighta",
+        description="SQLAlchemy URL, e.g. postgresql+psycopg://user:pass@host:5432/dbname",
+    )
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
+
+    profiles_cache_ttl_seconds: int = Field(default=60, ge=1)
+    profiles_cache_max_entries: int = Field(default=512, ge=16)
+
+    csv_import_batch_size: int = Field(default=1000, ge=100, le=5000)
+
     model_config = SettingsConfigDict(env_file=".env")
 
     @property

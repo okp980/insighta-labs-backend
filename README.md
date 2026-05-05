@@ -1,6 +1,6 @@
 # Insighta Labs+ — Backend API
 
-Secure demographic intelligence API: **profiles** with structured filters, **rule-based natural-language search**, **GitHub OAuth** (browser + **PKCE** for CLI-style clients), **JWT** access/refresh handling, **RBAC**, and **CSV export**. Built with **FastAPI**, **SQLModel**, and **SQLite** (`sqlite.db`).
+Secure demographic intelligence API: **profiles** with structured filters, **rule-based natural-language search**, **GitHub OAuth** (browser + **PKCE** for CLI-style clients), **JWT** access/refresh handling, **RBAC**, **CSV export**, and **batched CSV import**. Built with **FastAPI**, **SQLModel**, and **PostgreSQL** (set `DATABASE_URL`; local dev: [`docker-compose.yml`](docker-compose.yml)).
 
 **This repository is the backend only.** A separate CLI (Node or other) and a web portal can integrate against the same auth and data model. Three repos, one API contract.
 
@@ -21,7 +21,7 @@ Secure demographic intelligence API: **profiles** with structured filters, **rul
 │                             ▼                                │
 │              ┌──────────────────────────────┐                │
 │              │   Backend API (this repo)    │                │
-│              │   FastAPI + SQLModel + SQLite│                │
+│              │   FastAPI + SQLModel + PostgreSQL│                │
 │              │   JWT + OAuth + RBAC         │                │
 │              └──────────────────────────────┘                │
 └─────────────────────────────────────────────────────────────┘
@@ -61,6 +61,7 @@ Requires **Python 3.13+** and **`uv`**. App entrypoint: `app.main:app` (`pyproje
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth App client secret |
 | `GITHUB_REDIRECT_URI` | Must match GitHub callback URL (e.g. `http://127.0.0.1:8000/auth/github/callback`) |
 | `SECRET` | JWT signing key and Starlette **session** secret (OAuth state); use a long random value in production |
+| `DATABASE_URL` | SQLAlchemy URL (e.g. `postgresql+psycopg://user:pass@host:5432/dbname`) |
 | `FRONTEND_URL` | SPA origin used after OAuth redirect |
 | `CORS_ALLOW_ORIGINS` | Comma-separated allowed origins |
 | `COOKIE_SECURE` | Set `true` behind HTTPS |
@@ -106,7 +107,7 @@ Designed for native/CLI clients (`app/routers/auth.py`):
 | Token | TTL (defaults in code) | Persistence | Typical transport |
 | ----- | ---------------------- | ----------- | ------------------- |
 | Access | ~3 min (`ACCESS_TOKEN_MINUTES`) | Stateless JWT | `access_token` **HttpOnly** cookie |
-| Refresh | ~5 min (`REFRESH_TOKEN_MINUTES`) | **SQLite** `RefreshToken` row (`token`, `expires_at`, `is_revoked`) | `refresh_token` **HttpOnly** cookie (web) or JSON (CLI exchange) |
+| Refresh | ~5 min (`REFRESH_TOKEN_MINUTES`) | **PostgreSQL** `RefreshToken` row (`token`, `expires_at`, `is_revoked`) | `refresh_token` **HttpOnly** cookie (web) or JSON (CLI exchange) |
 
 - **Rotation:** `POST /auth/refresh` decodes the refresh JWT, **revokes** the existing DB row, mints a **new** pair, persists a new refresh row.
 - **Logout:** `POST /auth/logout` revokes the refresh row and clears cookies.
@@ -143,6 +144,7 @@ The User model includes **`is_active`** (returned on **`GET /auth/me`**), but **
 | `GET /api/profiles/search` | ✅ | ✅ |
 | `GET /api/profiles/export` | ✅ | ✅ |
 | `POST /api/profiles` | ❌ | ✅ |
+| `POST /api/profiles/import` | ❌ | ✅ |
 | `DELETE /api/profiles/{id}` | ❌ | ✅ |
 
 ## API reference
@@ -170,6 +172,7 @@ All require **`X-API-Version`** (any agreed value, e.g. `1`) **and** auth unless
 | `GET` | `/api/profiles/export` | analyst, admin | CSV stream |
 | `GET` | `/api/profiles/{id}` | analyst, admin | One profile |
 | `POST` | `/api/profiles` | admin | Create (enrichment via external name APIs) |
+| `POST` | `/api/profiles/import` | admin | CSV upload, batched insert + skip summary |
 | `DELETE` | `/api/profiles/{id}` | admin | Delete |
 
 `GET /` — simple health-style payload.

@@ -1,17 +1,22 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlmodel import select
+from sqlmodel import Session, select
 
+from ..config import Settings
+from ..database import engine
 from ..dependency import SessionDep, verify_api_version
+from ..ingest_csv import import_profiles_csv as run_csv_import
 from ..model.profiles import (
     Profile,
     ProfileCreate,
     ProfilePublic,
     ProfilePublicMessage,
+    ProfilesImportResponse,
     ProfilesPublic,
 )
 from ..model.users import User
@@ -26,6 +31,7 @@ from ..util import (
     filter_profiles,
     filter_search_profiles,
     generate_profile,
+    invalidate_profiles_cache,
     require_roles,
     stream_profiles_csv,
 )
@@ -108,6 +114,39 @@ async def export_profiles(
     )
 
 
+@router.post("/import", response_model=ProfilesImportResponse)
+async def import_profiles_csv_endpoint(
+    current_user: Annotated[
+        User,
+        Depends(require_roles("admin")),
+    ],
+    file: UploadFile = File(...),
+):
+    filename = file.filename or ""
+    if not filename.lower().endswith(".csv"):
+        raise CustomHTTPException(status_code=400, message="A .csv file is required")
+
+    settings = Settings()
+
+    def run_import() -> dict:
+        upload = file.file
+        upload.seek(0)
+        with Session(engine) as session:
+            return run_csv_import(
+                session=session,
+                file_binary=upload,
+                batch_size=settings.csv_import_batch_size,
+            )
+
+    try:
+        result = await asyncio.to_thread(run_import)
+    except ValueError as e:
+        raise CustomHTTPException(status_code=400, message=str(e)) from e
+
+    invalidate_profiles_cache()
+    return result
+
+
 @router.get("/{profile_id}", response_model=ProfilePublic)
 async def get_profile(
     profile_id: uuid.UUID,
@@ -143,6 +182,7 @@ async def create_profile(
     session.add(db_profile)
     session.commit()
     session.refresh(db_profile)
+    invalidate_profiles_cache()
     return ProfilePublic(data=db_profile)
 
 
@@ -157,4 +197,5 @@ async def delete_profile(
         raise CustomHTTPException(status_code=404, message="Profile not found")
     session.delete(profile)
     session.commit()
+    invalidate_profiles_cache()
     return JSONResponse(status_code=204, content={})
