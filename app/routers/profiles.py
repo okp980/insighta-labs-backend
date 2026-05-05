@@ -10,6 +10,8 @@ from ..util import (
     generate_profile,
     stream_profiles_csv,
     SUPPORTED_EXPORT_FORMATS,
+    build_pagination_links,
+    compute_total_pages,
 )
 from ..model.profiles import (
     ProfilePublic,
@@ -38,10 +40,18 @@ async def get_profiles(
     current_user: Annotated[User, Depends(require_roles("admin", "analyst"))],
 ):
     profiles_result = filter_profiles(session=session, filter_params=filter_params)
+    total = profiles_result["count"]
+    total_pages = compute_total_pages(total, filter_params.limit)
     return ProfilesPublic(
         page=filter_params.page,
         limit=filter_params.limit,
-        total=profiles_result["count"],
+        total=total,
+        total_pages=total_pages,
+        links=build_pagination_links(
+            path="/api/profiles",
+            params=filter_params,
+            total_pages=total_pages,
+        ),
         data=profiles_result["data"],
     )
 
@@ -56,10 +66,18 @@ async def search_profiles(
         profiles_result = filter_search_profiles(
             session=session, search_params=search_params
         )
+        total = profiles_result["count"]
+        total_pages = compute_total_pages(total, search_params.limit)
         return ProfilesPublic(
             page=search_params.page,
             limit=search_params.limit,
-            total=profiles_result["count"],
+            total=total,
+            total_pages=total_pages,
+            links=build_pagination_links(
+                path="/api/profiles/search",
+                params=search_params,
+                total_pages=total_pages,
+            ),
             data=profiles_result["data"],
         )
     except Exception:

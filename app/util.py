@@ -1,8 +1,9 @@
 from sqlmodel import Session
-from .model.profiles import Profile
+from .model.profiles import Profile, PaginationLinks
 from sqlmodel import select, col, asc, desc, func
 from pydantic import BaseModel, Field
 from typing import Literal, Callable, Iterator
+from urllib.parse import urlencode
 from .model.users import User
 from .security import (
     JWT_SECRET,
@@ -56,6 +57,34 @@ class CustomHTTPException(Exception):
     def __init__(self, status_code: int, message: str):
         self.status_code = status_code
         self.message = message
+
+
+def compute_total_pages(total: int, limit: int) -> int:
+    if limit <= 0 or total <= 0:
+        return 0
+    return (total + limit - 1) // limit
+
+
+def build_pagination_links(
+    *,
+    path: str,
+    params: PaginationParams,
+    total_pages: int,
+) -> PaginationLinks:
+    extras = params.model_dump(exclude_defaults=True, exclude={"page", "limit"})
+
+    def url_for(page: int) -> str:
+        query = {"page": page, "limit": params.limit, **extras}
+        return f"{path}?{urlencode(query)}"
+
+    has_next = params.page < total_pages
+    has_prev = params.page > 1
+
+    return PaginationLinks(
+        self=url_for(params.page),
+        next=url_for(params.page + 1) if has_next else None,
+        prev=url_for(params.page - 1) if has_prev else None,
+    )
 
 
 def generate_profile(name: str):

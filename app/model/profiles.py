@@ -37,11 +37,19 @@ class ProfilePublic(SQLModel):
     data: Profile
 
 
+class PaginationLinks(SQLModel):
+    self: str
+    next: str | None = None
+    prev: str | None = None
+
+
 class ProfilesPublic(SQLModel):
     status: str = "success"
     page: int
     limit: int
     total: int
+    total_pages: int
+    links: PaginationLinks
     data: list[Profile]
 
 
