@@ -1,12 +1,15 @@
 from fastapi import APIRouter, Query, Depends, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from ..dependency import SessionDep, verify_api_version
 import uuid
+from datetime import datetime, timezone
 from ..util import (
     CustomHTTPException,
     filter_profiles,
     filter_search_profiles,
     generate_profile,
+    stream_profiles_csv,
+    SUPPORTED_EXPORT_FORMATS,
 )
 from ..model.profiles import (
     ProfilePublic,
@@ -17,7 +20,7 @@ from ..model.profiles import (
 )
 from sqlmodel import select
 from typing import Annotated
-from ..util import FilterParams, SearchParams
+from ..util import FilterParams, SearchParams, ExportParams
 from ..util import require_roles
 from ..model.users import User
 
@@ -61,6 +64,28 @@ async def search_profiles(
         )
     except Exception:
         raise CustomHTTPException(status_code=502, message="Sever error")
+
+
+@router.get("/export")
+async def export_profiles(
+    export_params: Annotated[ExportParams, Query()],
+    session: SessionDep,
+    current_user: Annotated[User, Depends(require_roles("admin", "analyst"))],
+):
+    if export_params.format not in SUPPORTED_EXPORT_FORMATS:
+        supported = ", ".join(sorted(SUPPORTED_EXPORT_FORMATS))
+        raise CustomHTTPException(
+            status_code=400,
+            message=f"Unsupported export format '{export_params.format}'. Supported formats: {supported}.",
+        )
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    filename = f"profiles_{timestamp}.{export_params.format}"
+    return StreamingResponse(
+        stream_profiles_csv(session=session, filter_params=export_params),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{profile_id}", response_model=ProfilePublic)

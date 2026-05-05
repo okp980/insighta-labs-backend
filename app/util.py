@@ -2,7 +2,7 @@ from sqlmodel import Session
 from .model.profiles import Profile
 from sqlmodel import select, col, asc, desc, func
 from pydantic import BaseModel, Field
-from typing import Literal, Callable
+from typing import Literal, Callable, Iterator
 from .model.users import User
 from .security import (
     JWT_SECRET,
@@ -16,6 +16,9 @@ from .model.users import RefreshToken
 from fastapi import Depends, Cookie
 from .dependency import SessionDep
 from typing import Annotated
+from datetime import timezone
+import csv
+import io
 import uuid
 import httpx
 import json
@@ -40,6 +43,13 @@ class FilterParams(PaginationParams):
 
 class SearchParams(PaginationParams):
     q: str
+
+
+class ExportParams(FilterParams):
+    format: str = "csv"
+
+
+SUPPORTED_EXPORT_FORMATS = {"csv"}
 
 
 class CustomHTTPException(Exception):
@@ -119,8 +129,7 @@ def generate_profile(name: str):
         raise CustomHTTPException(status_code=502, message="Upstream or server failure")
 
 
-def filter_profiles(*, session: Session, filter_params: FilterParams) -> dict:
-
+def _build_profile_statement(filter_params: FilterParams):
     statement = select(Profile)
     if filter_params.gender is not None:
         statement = statement.where(col(Profile.gender) == filter_params.gender.lower())
@@ -162,7 +171,11 @@ def filter_profiles(*, session: Session, filter_params: FilterParams) -> dict:
             if filter_params.order == "asc"
             else desc(col(Profile.gender_probability))
         )
+    return statement
 
+
+def filter_profiles(*, session: Session, filter_params: FilterParams) -> dict:
+    statement = _build_profile_statement(filter_params)
     statement = statement.offset((filter_params.page - 1) * filter_params.limit).limit(
         filter_params.limit
     )
@@ -173,6 +186,57 @@ def filter_profiles(*, session: Session, filter_params: FilterParams) -> dict:
     }
 
     return result
+
+
+CSV_COLUMNS = [
+    "id",
+    "name",
+    "gender",
+    "gender_probability",
+    "age",
+    "age_group",
+    "country_id",
+    "country_name",
+    "country_probability",
+    "created_at",
+]
+
+
+def stream_profiles_csv(
+    *, session: Session, filter_params: FilterParams
+) -> Iterator[str]:
+    statement = _build_profile_statement(filter_params)
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+
+    def _flush() -> str:
+        data = buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        return data
+
+    writer.writerow(CSV_COLUMNS)
+    yield _flush()
+
+    for profile in session.exec(statement).yield_per(1000):
+        created_at = profile.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        writer.writerow(
+            [
+                str(profile.id),
+                profile.name,
+                profile.gender.value,
+                profile.gender_probability,
+                profile.age,
+                profile.age_group.value,
+                profile.country_id,
+                profile.country_name,
+                profile.country_probability,
+                created_at.astimezone(timezone.utc).isoformat(),
+            ]
+        )
+        yield _flush()
 
 
 def filter_search_profiles(*, session: Session, search_params: SearchParams) -> dict:
