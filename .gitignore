@@ -10,3 +10,5 @@
 *.pyzw
 *.pyzwz
 *.pyzwzw
+.ruff_cache/
+.pytest_cache/

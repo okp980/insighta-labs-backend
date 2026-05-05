@@ -1,7 +1,8 @@
-from sqlmodel import SQLModel, Field
-import uuid7
 from datetime import datetime, timezone
 from enum import Enum
+
+import uuid7
+from sqlmodel import Field, SQLModel
 
 
 class Gender(str, Enum):

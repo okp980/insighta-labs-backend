@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  # Uncomment to also run on pushes to main:
+  # push:
+  #   branches: [main]
+
+env:
+  GITHUB_CLIENT_ID: ci-stub
+  GITHUB_CLIENT_SECRET: ci-stub
+  GITHUB_REDIRECT_URI: http://localhost/auth/github/callback
+  SECRET: ci-stub-secret
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - run: uv sync --locked --all-extras
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - run: uv sync --locked --all-extras
+      - name: Run pytest (allow no-tests)
+        run: |
+          set +e
+          uv run pytest
+          status=$?
+          # exit 5 = "no tests collected" — treat as pass for now
+          if [ $status -ne 0 ] && [ $status -ne 5 ]; then exit $status; fi
+
+  build:
+    name: Build check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - name: Verify lockfile and dependency install
+        run: uv sync --locked --all-extras
+      - name: Import smoke test
+        run: uv run python -c "import app.main; print('app.main imported OK')"

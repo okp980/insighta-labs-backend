@@ -8,9 +8,7 @@ def get_countries():
 
         profiles = seed_data.get("profiles", [])
         countries = list({(d["country_id"], d["country_name"]) for d in profiles})
-        countries = [
-            {"country_id": cid, "country_name": name} for cid, name in countries
-        ]
+        countries = [{"country_id": cid, "country_name": name} for cid, name in countries]
         countries.sort(key=lambda c: c["country_id"])
 
         with open("countries.json", "w") as out:

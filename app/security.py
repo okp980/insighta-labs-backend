@@ -1,10 +1,12 @@
-from datetime import datetime, timedelta, timezone
-import jwt
-from .config import Settings
-from functools import lru_cache
-from sqlmodel import Session, select
-from .model.users import RefreshToken
 import uuid
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+
+import jwt
+from sqlmodel import Session
+
+from .config import Settings
+from .model.users import RefreshToken
 
 
 @lru_cache

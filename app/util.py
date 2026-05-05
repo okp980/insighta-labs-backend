@@ -1,28 +1,27 @@
-from sqlmodel import Session
-from .model.profiles import Profile, PaginationLinks
-from sqlmodel import select, col, asc, desc, func
-from pydantic import BaseModel, Field
-from typing import Literal, Callable, Iterator
+import csv
+import io
+import json
+import uuid
+from datetime import timezone
+from typing import Annotated, Callable, Iterator, Literal
 from urllib.parse import urlencode
-from .model.users import User
+
+import httpx
+import jwt
+from fastapi import Cookie, Depends
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+from pydantic import BaseModel, Field
+from sqlmodel import Session, asc, col, desc, func, select
+
+from .dependency import SessionDep
+from .model.profiles import PaginationLinks, Profile
+from .model.users import RefreshToken, User
 from .security import (
-    JWT_SECRET,
     JWT_ALGORITHM,
+    JWT_SECRET,
     create_access_token,
     create_refresh_token,
 )
-import jwt
-from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
-from .model.users import RefreshToken
-from fastapi import Depends, Cookie
-from .dependency import SessionDep
-from typing import Annotated
-from datetime import timezone
-import csv
-import io
-import uuid
-import httpx
-import json
 
 
 class PaginationParams(BaseModel):
@@ -89,9 +88,7 @@ def build_pagination_links(
 
 def generate_profile(name: str):
     try:
-        genderize_response = httpx.get(
-            f"https://api.genderize.io?name={name}", timeout=10.0
-        )
+        genderize_response = httpx.get(f"https://api.genderize.io?name={name}", timeout=10.0)
         genderize_data = genderize_response.json()
         if genderize_data["gender"] is None or genderize_data["count"] == 0:
             raise CustomHTTPException(
@@ -100,9 +97,7 @@ def generate_profile(name: str):
         agify_response = httpx.get(f"https://api.agify.io?name={name}", timeout=10.0)
         agify_data = agify_response.json()
         if agify_data["age"] is None:
-            raise CustomHTTPException(
-                status_code=502, message="Agify returned an invalid response"
-            )
+            raise CustomHTTPException(status_code=502, message="Agify returned an invalid response")
         country_response = httpx.get(
             f"https://api.nationalize.io?name={name}",
             timeout=10.0,
@@ -149,9 +144,7 @@ def generate_profile(name: str):
             else "senior",
             "country_name": country_name,
             "country_id": country_with_highest_probability["country_id"],
-            "country_probability": round(
-                country_with_highest_probability["probability"], 2
-            ),
+            "country_probability": round(country_with_highest_probability["probability"], 2),
         }
     except httpx.RequestError as e:
         print.pprint(e.request.url)
@@ -163,13 +156,9 @@ def _build_profile_statement(filter_params: FilterParams):
     if filter_params.gender is not None:
         statement = statement.where(col(Profile.gender) == filter_params.gender.lower())
     if filter_params.country_id is not None:
-        statement = statement.where(
-            col(Profile.country_id) == filter_params.country_id.upper()
-        )
+        statement = statement.where(col(Profile.country_id) == filter_params.country_id.upper())
     if filter_params.age_group is not None:
-        statement = statement.where(
-            col(Profile.age_group) == filter_params.age_group.lower()
-        )
+        statement = statement.where(col(Profile.age_group) == filter_params.age_group.lower())
     if filter_params.min_age is not None:
         statement = statement.where(col(Profile.age) >= filter_params.min_age)
     if filter_params.max_age is not None:
@@ -184,9 +173,7 @@ def _build_profile_statement(filter_params: FilterParams):
         )
     if filter_params.sort_by == "age":
         statement = statement.order_by(
-            asc(col(Profile.age))
-            if filter_params.order == "asc"
-            else desc(col(Profile.age))
+            asc(col(Profile.age)) if filter_params.order == "asc" else desc(col(Profile.age))
         )
     if filter_params.sort_by == "created_at":
         statement = statement.order_by(
@@ -231,9 +218,7 @@ CSV_COLUMNS = [
 ]
 
 
-def stream_profiles_csv(
-    *, session: Session, filter_params: FilterParams
-) -> Iterator[str]:
+def stream_profiles_csv(*, session: Session, filter_params: FilterParams) -> Iterator[str]:
     statement = _build_profile_statement(filter_params)
     buffer = io.StringIO()
     writer = csv.writer(buffer)
@@ -342,9 +327,7 @@ def filter_search_profiles(*, session: Session, search_params: SearchParams) -> 
     if country_name is not None:
         statement = statement.where(col(Profile.country_name).ilike(country_name))
 
-    total_count = session.exec(
-        select(func.count()).select_from(statement.subquery())
-    ).one()
+    total_count = session.exec(select(func.count()).select_from(statement.subquery())).one()
 
     statement = statement.offset((search_params.page - 1) * search_params.limit).limit(
         search_params.limit
@@ -400,15 +383,11 @@ def verify_refresh_token(token: str) -> dict:
 
 
 def revoke_refresh_token(token: str, session: Session):
-    refresh_token = session.exec(
-        select(RefreshToken).where(RefreshToken.token == token)
-    ).first()
+    refresh_token = session.exec(select(RefreshToken).where(RefreshToken.token == token)).first()
     if not refresh_token:
         raise CustomHTTPException(status_code=401, message="Refresh token not found")
     if refresh_token.is_revoked:
-        raise CustomHTTPException(
-            status_code=401, message="Refresh token has been revoked"
-        )
+        raise CustomHTTPException(status_code=401, message="Refresh token has been revoked")
     refresh_token.is_revoked = True
     session.commit()
     session.refresh(refresh_token)

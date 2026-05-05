@@ -1,30 +1,34 @@
-from fastapi import APIRouter, Query, Depends, status
-from fastapi.responses import JSONResponse, StreamingResponse
-from ..dependency import SessionDep, verify_api_version
 import uuid
 from datetime import datetime, timezone
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import JSONResponse, StreamingResponse
+from sqlmodel import select
+
+from ..dependency import SessionDep, verify_api_version
+from ..model.profiles import (
+    Profile,
+    ProfileCreate,
+    ProfilePublic,
+    ProfilePublicMessage,
+    ProfilesPublic,
+)
+from ..model.users import User
 from ..util import (
+    SUPPORTED_EXPORT_FORMATS,
     CustomHTTPException,
+    ExportParams,
+    FilterParams,
+    SearchParams,
+    build_pagination_links,
+    compute_total_pages,
     filter_profiles,
     filter_search_profiles,
     generate_profile,
+    require_roles,
     stream_profiles_csv,
-    SUPPORTED_EXPORT_FORMATS,
-    build_pagination_links,
-    compute_total_pages,
 )
-from ..model.profiles import (
-    ProfilePublic,
-    ProfilesPublic,
-    Profile,
-    ProfileCreate,
-    ProfilePublicMessage,
-)
-from sqlmodel import select
-from typing import Annotated
-from ..util import FilterParams, SearchParams, ExportParams
-from ..util import require_roles
-from ..model.users import User
 
 router = APIRouter(
     prefix="/api/profiles",
@@ -62,9 +66,7 @@ async def search_profiles(
     session: SessionDep,
     current_user: Annotated[User, Depends(require_roles("admin", "analyst"))],
 ):
-    profiles_result = filter_search_profiles(
-        session=session, search_params=search_params
-    )
+    profiles_result = filter_search_profiles(session=session, search_params=search_params)
     total = profiles_result["count"]
     total_pages = compute_total_pages(total, search_params.limit)
     return ProfilesPublic(
@@ -91,7 +93,10 @@ async def export_profiles(
         supported = ", ".join(sorted(SUPPORTED_EXPORT_FORMATS))
         raise CustomHTTPException(
             status_code=400,
-            message=f"Unsupported export format '{export_params.format}'. Supported formats: {supported}.",
+            message=(
+                f"Unsupported export format '{export_params.format}'. "
+                f"Supported formats: {supported}."
+            ),
         )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -129,9 +134,7 @@ async def create_profile(
     ],
 ):
     # db_profile = ProfileCreate.model_validate(profile)
-    existing_profile = session.exec(
-        select(Profile).where(Profile.name == profile.name)
-    ).first()
+    existing_profile = session.exec(select(Profile).where(Profile.name == profile.name)).first()
     if existing_profile:
         print("Profile already exists")
         return ProfilePublicMessage(data=existing_profile)
@@ -143,9 +146,7 @@ async def create_profile(
     return ProfilePublic(data=db_profile)
 
 
-@router.delete(
-    "/{profile_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None
-)
+@router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def delete_profile(
     profile_id: uuid.UUID,
     session: SessionDep,

@@ -1,7 +1,9 @@
-from app.database import engine, create_db_and_tables
-from sqlmodel import Session, select
-from app.model.profiles import Profile
 import json
+
+from sqlmodel import Session, select
+
+from app.database import create_db_and_tables, engine
+from app.model.profiles import Profile
 
 
 def seed():

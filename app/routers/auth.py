@@ -1,22 +1,27 @@
 from functools import lru_cache
+from typing import Annotated
+
 from authlib.integrations.starlette_client import OAuth
-from ..config import Settings
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Cookie, Depends, Request
 from fastapi.responses import Response
+
+from ..config import Settings
+from ..dependency import SessionDep
+from ..model.users import TokenPair, User
+from ..rate_limit import limiter
+from ..security import (
+    ACCESS_TOKEN_MINUTES,
+    REFRESH_TOKEN_MINUTES,
+    create_access_token,
+    create_refresh_token,
+)
 from ..util import (
-    get_user_by_github_id,
     create_user,
+    get_current_user,
+    get_user_by_github_id,
     refresh_all_tokens,
     revoke_refresh_token,
-    get_current_user,
 )
-from ..security import create_access_token, create_refresh_token
-from ..dependency import SessionDep
-from ..model.users import User, RefreshTokenBase, TokenPair
-from ..security import ACCESS_TOKEN_MINUTES, REFRESH_TOKEN_MINUTES
-from ..rate_limit import limiter
-from typing import Annotated
-from fastapi import Depends, Cookie
 
 
 @lru_cache
@@ -125,9 +130,7 @@ async def refresh(
         secure=False,
         max_age=REFRESH_TOKEN_MINUTES * 60,
     )
-    return TokenPair(
-        access_token=tokens["access_token"], refresh_token=tokens["refresh_token"]
-    )
+    return TokenPair(access_token=tokens["access_token"], refresh_token=tokens["refresh_token"])
 
 
 @router.post("/logout")

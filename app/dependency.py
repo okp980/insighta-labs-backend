@@ -1,8 +1,10 @@
 from typing import Annotated
+
 from fastapi import Depends, Header
 
 # from fastapi.responses import HTTPException
 from sqlmodel import Session
+
 from .database import engine
 
 
@@ -17,9 +19,7 @@ def verify_api_version(
     from app.util import CustomHTTPException
 
     if not x_api_version:
-        raise CustomHTTPException(
-            status_code=400, message="API version header required"
-        )
+        raise CustomHTTPException(status_code=400, message="API version header required")
 
 
 SessionDep = Annotated[Session, Depends(get_session)]

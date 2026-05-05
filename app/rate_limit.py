@@ -2,7 +2,8 @@ import jwt
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from .security import JWT_SECRET, JWT_ALGORITHM
+
+from .security import JWT_ALGORITHM, JWT_SECRET
 
 AUTH_PATH_PREFIX = "/auth"
 

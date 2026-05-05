@@ -1,19 +1,20 @@
 import logging
 import time
-from fastapi import FastAPI
-from .routers import profiles, auth
-from .database import create_db_and_tables
-from .util import CustomHTTPException
-from fastapi.responses import JSONResponse
+from functools import lru_cache
+
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.sessions import SessionMiddleware
+from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.sessions import SessionMiddleware
+
 from .config import Settings
+from .database import create_db_and_tables
 from .rate_limit import limiter
-from functools import lru_cache
+from .routers import auth, profiles
+from .util import CustomHTTPException
 
 logging.basicConfig(
     level=logging.INFO,
