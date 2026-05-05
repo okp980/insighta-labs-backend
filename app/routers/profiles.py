@@ -119,14 +119,14 @@ async def get_profile(
 async def create_profile(
     profile: ProfileCreate,
     session: SessionDep,
-    # current_user: Annotated[
-    #     User,
-    #     Depends(
-    #         require_roles(
-    #             "admin",
-    #         )
-    #     ),
-    # ],
+    current_user: Annotated[
+        User,
+        Depends(
+            require_roles(
+                "admin",
+            )
+        ),
+    ],
 ):
     # db_profile = ProfileCreate.model_validate(profile)
     existing_profile = session.exec(
