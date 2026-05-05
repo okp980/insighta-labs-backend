@@ -2,7 +2,7 @@ from functools import lru_cache
 from authlib.integrations.starlette_client import OAuth
 from ..config import Settings
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 from ..util import (
     get_user_by_github_id,
     create_user,
@@ -14,6 +14,7 @@ from ..security import create_access_token, create_refresh_token
 from ..dependency import SessionDep
 from ..model.users import User, RefreshTokenBase, TokenPair
 from ..security import ACCESS_TOKEN_MINUTES, REFRESH_TOKEN_MINUTES
+from ..rate_limit import limiter
 from typing import Annotated
 from fastapi import Depends, Cookie
 
@@ -38,18 +39,20 @@ oauth.register(
 )
 
 router = APIRouter(
-    prefix="/api/auth",
+    prefix="/auth",
     tags=["Auth"],
 )
 
 
 @router.get("/github/login")
+@limiter.limit("10/minute")
 async def github_login(request: Request):
     redirect_uri = request.url_for("github_callback")
     return await oauth.github.authorize_redirect(request, str(redirect_uri))
 
 
 @router.get("/github/callback", response_model=TokenPair)
+@limiter.limit("10/minute")
 async def github_callback(request: Request, response: Response, session: SessionDep):
     token = await oauth.github.authorize_access_token(
         request,
@@ -99,7 +102,9 @@ async def github_callback(request: Request, response: Response, session: Session
     "/refresh",
     response_model=TokenPair,
 )
+@limiter.limit("10/minute")
 async def refresh(
+    request: Request,
     session: SessionDep,
     response: Response,
     refresh_token: Annotated[str | None, Cookie()] = None,
@@ -126,7 +131,9 @@ async def refresh(
 
 
 @router.post("/logout")
+@limiter.limit("10/minute")
 async def logout(
+    request: Request,
     response: Response,
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],

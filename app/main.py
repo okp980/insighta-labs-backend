@@ -1,16 +1,28 @@
+import logging
+import time
 from fastapi import FastAPI
 from .routers import profiles, auth
 from .database import create_db_and_tables
 from .util import CustomHTTPException
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from .config import Settings
+from .rate_limit import limiter
 from functools import lru_cache
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+access_logger = logging.getLogger("app.access")
+
 app = FastAPI()
+app.state.limiter = limiter
 
 
 @lru_cache
@@ -30,6 +42,23 @@ app.add_middleware(
 # for authlib to work
 app.add_middleware(SessionMiddleware, secret_key=get_settings().secret)
 
+app.add_middleware(SlowAPIMiddleware)
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    access_logger.info(
+        "%s %s -> %d (%.2fms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+    )
+    return response
+
 
 @app.on_event("startup")
 def on_startup():
@@ -38,6 +67,17 @@ def on_startup():
 
 app.include_router(profiles.router)
 app.include_router(auth.router)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "status": "error",
+            "message": "Too Many Requests",
+        },
+    )
 
 
 @app.exception_handler(CustomHTTPException)
@@ -49,14 +89,11 @@ async def custom_http_exception_handler(request: Request, exc: CustomHTTPExcepti
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    # return JSONResponse(
-    #     status_code=422,
-    #     content={"status": "error", "message": "Invalid parameter type"},
-    # )
-    message = "Validation errors:"
-    for error in exc.errors():
-        message += f"\nField: {error['loc']}, Error: {error['msg']}"
-    return PlainTextResponse(message, status_code=400)
+    message = exc.errors()[0]["msg"] if exc.errors() else "Invalid parameter type"
+    return JSONResponse(
+        status_code=422,
+        content={"status": "error", "message": message},
+    )
 
 
 @app.get("/")
